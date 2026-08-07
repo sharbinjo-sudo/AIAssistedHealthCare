@@ -1,0 +1,35 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.sqlite3-journal
+.venv/
+venv/
+env/
+backend/media/
+backend/staticfiles/
+
+# Flutter / Dart
+frontend/.dart_tool/
+frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
+frontend/.pub/
+frontend/build/
+frontend/coverage/
