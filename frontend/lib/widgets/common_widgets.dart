@@ -4,6 +4,32 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/colors.dart';
+import '../core/locale_controller.dart';
+import '../l10n/generated/app_localizations.dart';
+import '../l10n/l10n.dart';
+
+class AppNavBar extends StatelessWidget implements PreferredSizeWidget {
+  const AppNavBar({super.key, required this.title, this.actions, this.showBack = true});
+
+  final String title;
+  final List<Widget>? actions;
+  final bool showBack;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: Text(title, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+      leading: showBack && context.canPop() ? const BackButton() : null,
+      actions: [
+        const LanguageMenuButton(),
+        ...?actions,
+      ],
+    );
+  }
+}
 
 class AppScaffold extends StatelessWidget {
   const AppScaffold({super.key, required this.title, required this.child, this.actions, this.showBack = true});
@@ -16,11 +42,7 @@ class AppScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        leading: showBack && context.canPop() ? const BackButton() : null,
-        actions: actions,
-      ),
+      appBar: AppNavBar(title: title, actions: actions, showBack: showBack),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
@@ -30,6 +52,74 @@ class AppScaffold extends StatelessWidget {
     );
   }
 }
+
+class LanguageMenuButton extends StatelessWidget {
+  const LanguageMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final localeController = LocaleControllerScope.of(context);
+    final currentLabel = _languageLabel(l10n, localeController.locale);
+
+    return PopupMenuButton<Locale>(
+      tooltip: l10n.language,
+      initialValue: localeController.locale,
+      onSelected: localeController.setLocale,
+      itemBuilder: (context) => [
+        PopupMenuItem(value: const Locale('en'), child: Text(l10n.english)),
+        PopupMenuItem(value: const Locale('ta'), child: Text(l10n.tamilWithEnglish)),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 132),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.language, size: 22),
+              const SizedBox(width: 6),
+              Flexible(child: Text(currentLabel, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelLarge)),
+              const SizedBox(width: 2),
+              const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class LanguageRadioSelector extends StatelessWidget {
+  const LanguageRadioSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final localeController = LocaleControllerScope.of(context);
+
+    return RadioGroup<Locale>(
+      groupValue: localeController.locale,
+      onChanged: (locale) {
+        if (locale != null) localeController.setLocale(locale);
+      },
+      child: Column(
+        children: [
+          RadioListTile<Locale>(
+            title: Text(l10n.english),
+            value: const Locale('en'),
+          ),
+          RadioListTile<Locale>(
+            title: Text(l10n.tamilWithEnglish),
+            value: const Locale('ta'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _languageLabel(AppLocalizations l10n, Locale locale) => locale.languageCode == 'ta' ? l10n.tamil : l10n.english;
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({super.key, required this.label, required this.onPressed, this.icon});
@@ -57,6 +147,39 @@ class AppTextField extends StatelessWidget {
     return TextField(
       obscureText: obscure,
       decoration: InputDecoration(labelText: label, prefixIcon: icon == null ? null : Icon(icon)),
+    );
+  }
+}
+
+class AppDropdownField extends StatelessWidget {
+  const AppDropdownField({
+    super.key,
+    required this.label,
+    required this.items,
+    required this.onChanged,
+    this.value,
+    this.icon,
+    this.itemLabel,
+  });
+
+  final String label;
+  final List<String> items;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final IconData? icon;
+  final String Function(String item)? itemLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+      decoration: InputDecoration(labelText: label, prefixIcon: icon == null ? null : Icon(icon)),
+      items: [
+        for (final item in items) DropdownMenuItem(value: item, child: Text(itemLabel?.call(item) ?? item)),
+      ],
+      onChanged: onChanged,
     );
   }
 }
@@ -154,8 +277,12 @@ class _AsyncViewState<T> extends State<AsyncView<T>> {
     return FutureBuilder<T>(
       future: _future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) return const LoadingSkeleton();
-        if (snapshot.hasError) return ErrorState(onRetry: () => setState(() => _future = widget.load()));
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const LoadingSkeleton();
+        }
+        if (snapshot.hasError) {
+          return ErrorState(onRetry: () => setState(() => _future = widget.load()));
+        }
         if (!snapshot.hasData) return const EmptyState();
         return widget.builder(context, snapshot.data as T);
       },
@@ -187,7 +314,7 @@ class LoadingSkeleton extends StatelessWidget {
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key});
   @override
-  Widget build(BuildContext context) => const Center(child: Text('No health data yet.'));
+  Widget build(BuildContext context) => Center(child: Text(context.l10n.noHealthDataYet));
 }
 
 class ErrorState extends StatelessWidget {
@@ -198,9 +325,9 @@ class ErrorState extends StatelessWidget {
         children: [
           const Icon(Icons.cloud_off, size: 44),
           const SizedBox(height: 12),
-          const Text('Something went wrong'),
+          Text(context.l10n.somethingWentWrong),
           const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+          OutlinedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(context.l10n.retry)),
         ],
       );
 }

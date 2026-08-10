@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
+import 'core/locale_controller.dart';
 
-void main() {
-  runApp(HealGuiApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final localeController = LocaleController();
+  await localeController.load();
+  runApp(HealGuiApp(localeController: localeController));
 }

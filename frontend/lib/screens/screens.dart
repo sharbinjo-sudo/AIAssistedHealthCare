@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
-import '../core/constants.dart';
+import '../l10n/generated/app_localizations.dart';
+import '../l10n/l10n.dart';
 import '../models/health_models.dart';
 import '../services/dummy_api.dart';
 import '../widgets/common_widgets.dart';
@@ -36,7 +37,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
+      appBar: AppNavBar(title: l10n.appTitle, showBack: false),
       body: Center(
         child: FadeTransition(
           opacity: Tween<double>(begin: .55, end: 1).animate(_controller),
@@ -58,9 +61,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(height: 22),
-              Text(AppConstants.appName, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
+              Text(l10n.appTitle, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
-              const Text(AppConstants.tagline),
+              Text(l10n.tagline),
               const SizedBox(height: 28),
               const SizedBox(width: 42, height: 42, child: CircularProgressIndicator()),
             ],
@@ -83,32 +86,33 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     setState(() => _loading = true);
-    final response = await _api.login();
+    await _api.login();
     if (!mounted) return;
     setState(() => _loading = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(response['message'] as String)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.l10n.loginSuccessful)));
     context.go('/personal-details');
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Welcome back',
+      title: l10n.welcomeBack,
       showBack: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Hero(tag: 'logo', child: Icon(Icons.health_and_safety, size: 62)),
           const SizedBox(height: 28),
-          const AppTextField(label: 'Email', icon: Icons.mail_outline),
+          AppTextField(label: l10n.email, icon: Icons.mail_outline),
           const SizedBox(height: 14),
-          const AppTextField(label: 'Password', icon: Icons.lock_outline, obscure: true),
-          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () {}, child: const Text('Forgot Password'))),
-          PrimaryButton(label: _loading ? 'Signing in...' : 'Login', icon: Icons.arrow_forward, onPressed: _loading ? null : _login),
+          AppTextField(label: l10n.password, icon: Icons.lock_outline, obscure: true),
+          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () {}, child: Text(l10n.forgotPassword))),
+          PrimaryButton(label: _loading ? l10n.signingIn : l10n.login, icon: Icons.arrow_forward, onPressed: _loading ? null : _login),
           const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: _login, icon: const Icon(Icons.g_mobiledata), label: const Text('Continue with Google')),
+          OutlinedButton.icon(onPressed: _login, icon: const Icon(Icons.g_mobiledata), label: Text(l10n.continueWithGoogle)),
           const SizedBox(height: 10),
-          TextButton(onPressed: () => context.go('/signup'), child: const Text('Create a new account')),
+          TextButton(onPressed: () => context.go('/signup'), child: Text(l10n.createNewAccount)),
         ],
       ),
     );
@@ -133,21 +137,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Create account',
+      title: l10n.createAccount,
       child: Column(
         children: [
-          for (final field in const [
-            ('Name', Icons.person_outline, false),
-            ('Email', Icons.mail_outline, false),
-            ('Phone', Icons.call_outlined, false),
-            ('Password', Icons.lock_outline, true),
-            ('Confirm Password', Icons.verified_user_outlined, true),
+          for (final field in [
+            (l10n.name, Icons.person_outline, false),
+            (l10n.email, Icons.mail_outline, false),
+            (l10n.phone, Icons.call_outlined, false),
+            (l10n.password, Icons.lock_outline, true),
+            (l10n.confirmPassword, Icons.verified_user_outlined, true),
           ]) ...[
             AppTextField(label: field.$1, icon: field.$2, obscure: field.$3),
             const SizedBox(height: 14),
           ],
-          PrimaryButton(label: _loading ? 'Creating...' : 'Sign Up', icon: Icons.check_circle_outline, onPressed: _loading ? null : _submit),
+          PrimaryButton(label: _loading ? l10n.creating : l10n.signUp, icon: Icons.check_circle_outline, onPressed: _loading ? null : _submit),
         ],
       ),
     );
@@ -163,6 +168,9 @@ class PersonalDetailsScreen extends StatefulWidget {
 
 class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
   bool _loading = false;
+  final Map<String, String?> _dropdownValues = {
+    for (final field in _personalDetailDropdownOptions.keys) field: null,
+  };
 
   Future<void> _save() async {
     setState(() => _loading = true);
@@ -172,27 +180,9 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final fields = [
-      'Name',
-      'Age',
-      'Gender',
-      'Height',
-      'Weight',
-      'Blood Pressure',
-      'Heart Rate',
-      'Blood Group',
-      'Family History',
-      'Allergies',
-      'Diabetes',
-      'Smoking',
-      'Alcohol',
-      'Exercise',
-      'Sleep Hours',
-      'Water Intake',
-      'Emergency Contact',
-    ];
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Personal Details',
+      title: l10n.personalDetails,
       child: Column(
         children: [
           LayoutBuilder(
@@ -201,34 +191,248 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: fields.length,
+                itemCount: _personalDetailFields.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   mainAxisSpacing: 14,
                   crossAxisSpacing: 14,
                   childAspectRatio: columns == 1 ? 5.6 : 4.8,
                 ),
-                itemBuilder: (_, index) => AppTextField(label: fields[index], icon: Icons.monitor_heart_outlined),
+                itemBuilder: (_, index) {
+                  final field = _personalDetailFields[index];
+                  if (field == null) return const SizedBox.shrink();
+
+                  final dropdownItems = _personalDetailDropdownOptions[field];
+                  if (dropdownItems == null) {
+                    return AppTextField(label: _personalDetailLabel(l10n, field), icon: Icons.monitor_heart_outlined);
+                  }
+
+                  return AppDropdownField(
+                    label: _personalDetailLabel(l10n, field),
+                    icon: Icons.monitor_heart_outlined,
+                    items: dropdownItems,
+                    value: _dropdownValues[field],
+                    itemLabel: (item) => _personalDetailOptionLabel(l10n, item),
+                    onChanged: (value) => setState(() => _dropdownValues[field] = value),
+                  );
+                },
               );
             },
           ),
           const SizedBox(height: 18),
-          PrimaryButton(label: _loading ? 'Saving...' : 'Save Profile', icon: Icons.save_outlined, onPressed: _loading ? null : _save),
+          PrimaryButton(label: _loading ? l10n.saving : l10n.saveProfile, icon: Icons.save_outlined, onPressed: _loading ? null : _save),
         ],
       ),
     );
   }
 }
 
+const List<String?> _personalDetailFields = [
+  'name',
+  'age',
+  'gender',
+  'height',
+  'weight',
+  'bloodPressure',
+  'heartRate',
+  'bloodGroup',
+  'familyHistory',
+  'allergies',
+  'diabetes',
+  'smoking',
+  'alcohol',
+  'exercise',
+  'sleepHours',
+  'waterIntake',
+  'emergencyContact',
+  null,
+];
+
+const Map<String, List<String>> _personalDetailDropdownOptions = {
+  'gender': ['male', 'female', 'other', 'preferNotToSay'],
+  'bloodGroup': ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+  'familyHistory': ['yes', 'no', 'unknown'],
+  'allergies': ['yes', 'no'],
+  'diabetes': ['yes', 'no'],
+  'smoking': ['never', 'formerSmoker', 'currentSmoker'],
+  'alcohol': ['never', 'occasionally', 'frequently'],
+  'exercise': ['never', 'oneTwoDaysWeek', 'threeFiveDaysWeek', 'daily'],
+};
+
+String _personalDetailLabel(AppLocalizations l10n, String field) {
+  switch (field) {
+    case 'name':
+      return l10n.name;
+    case 'age':
+      return l10n.age;
+    case 'gender':
+      return l10n.gender;
+    case 'height':
+      return l10n.height;
+    case 'weight':
+      return l10n.weight;
+    case 'bloodPressure':
+      return l10n.bloodPressure;
+    case 'heartRate':
+      return l10n.heartRate;
+    case 'bloodGroup':
+      return l10n.bloodGroup;
+    case 'familyHistory':
+      return l10n.familyHistory;
+    case 'allergies':
+      return l10n.allergies;
+    case 'diabetes':
+      return l10n.diabetes;
+    case 'smoking':
+      return l10n.smoking;
+    case 'alcohol':
+      return l10n.alcohol;
+    case 'exercise':
+      return l10n.exercise;
+    case 'sleepHours':
+      return l10n.sleepHours;
+    case 'waterIntake':
+      return l10n.waterIntake;
+    case 'emergencyContact':
+      return l10n.emergencyContact;
+  }
+  return field;
+}
+
+String _personalDetailOptionLabel(AppLocalizations l10n, String item) {
+  switch (item) {
+    case 'male':
+      return l10n.male;
+    case 'female':
+      return l10n.female;
+    case 'other':
+      return l10n.other;
+    case 'preferNotToSay':
+      return l10n.preferNotToSay;
+    case 'yes':
+      return l10n.yes;
+    case 'no':
+      return l10n.no;
+    case 'unknown':
+      return l10n.unknown;
+    case 'never':
+      return l10n.never;
+    case 'formerSmoker':
+      return l10n.formerSmoker;
+    case 'currentSmoker':
+      return l10n.currentSmoker;
+    case 'occasionally':
+      return l10n.occasionally;
+    case 'frequently':
+      return l10n.frequently;
+    case 'oneTwoDaysWeek':
+      return l10n.oneTwoDaysWeek;
+    case 'threeFiveDaysWeek':
+      return l10n.threeFiveDaysWeek;
+    case 'daily':
+      return l10n.daily;
+  }
+  return item;
+}
+
+Map<String, String> _reportAnalysisItems(AppLocalizations l10n) => {
+      l10n.bloodSugar: l10n.normal,
+      l10n.cholesterol: l10n.slightlyHigh,
+      l10n.bloodPressure: '120/80',
+      l10n.summary: l10n.healthy,
+    };
+
+Map<String, String> _analysisItems(AppLocalizations l10n) => {
+      l10n.healthScore: '92',
+      l10n.risk: l10n.low,
+      l10n.bioAge: '24',
+      l10n.bmi: '21.9',
+      l10n.stress: l10n.medium,
+    };
+
+Map<String, String> _aiReportSections(AppLocalizations l10n) => {
+      l10n.healthSummary: l10n.healthSummaryText,
+      l10n.detectedRisks: l10n.detectedRisksText,
+      l10n.lifestyleSuggestions: l10n.lifestyleSuggestionsText,
+      l10n.priorityLevel: l10n.priorityLevelText,
+      l10n.healthyHabits: l10n.healthyHabitsText,
+      l10n.doctorRecommendation: l10n.doctorRecommendationText,
+    };
+
+String _chatMessageText(AppLocalizations l10n, String key) {
+  switch (key) {
+    case 'chatGreeting':
+      return l10n.chatGreeting;
+    case 'chatReply':
+      return l10n.chatReply;
+  }
+  return key;
+}
+
+String _sliderLabel(AppLocalizations l10n, String key) {
+  switch (key) {
+    case 'weight':
+      return l10n.weight;
+    case 'walking':
+      return l10n.walking;
+    case 'sleep':
+      return l10n.sleep;
+    case 'water':
+      return l10n.water;
+    case 'exercise':
+      return l10n.exercise;
+    case 'smoking':
+      return l10n.smoking;
+    case 'alcohol':
+      return l10n.alcohol;
+  }
+  return key;
+}
+
+Map<String, String> _predictionItems(AppLocalizations l10n) => {
+      l10n.futureHealthScore: '97',
+      l10n.bioAge: '21',
+      l10n.risk: l10n.veryLow,
+    };
+
+double _sliderMax(String key) => key == 'weight'
+    ? 140
+    : key == 'walking'
+        ? 120
+        : 10;
+
+Map<String, String> _dietTargets(AppLocalizations l10n) => {
+      l10n.calories: '2200',
+      l10n.protein: '110g',
+      l10n.water: '3L',
+    };
+
+Map<String, String> _dailyPlan(AppLocalizations l10n) => {
+      l10n.breakfast: l10n.breakfastText,
+      l10n.lunch: l10n.lunchText,
+      l10n.dinner: l10n.dinnerText,
+      l10n.snacks: l10n.snacksText,
+      l10n.bmiAdvice: l10n.bmiAdviceText,
+      l10n.exerciseTips: l10n.exerciseTipsText,
+      l10n.shoppingList: l10n.shoppingListText,
+    };
+
+Map<String, String> _medicalTimeline(AppLocalizations l10n) => {
+      l10n.today: l10n.todayTimeline,
+      l10n.lastWeek: l10n.lastWeekTimeline,
+      l10n.lastMonth: l10n.lastMonthTimeline,
+    };
+
 class HomeDashboardScreen extends StatelessWidget {
   const HomeDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/home'),
       body: AppScaffold(
-        title: 'Hello John',
+        title: l10n.helloJohn,
         showBack: false,
         actions: [IconButton(onPressed: () => context.go('/settings'), icon: const Icon(Icons.settings_outlined))],
         child: AsyncView<DashboardData>(
@@ -240,29 +444,29 @@ class HomeDashboardScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Column(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Health score', style: TextStyle(color: Colors.white70)),
-                        SizedBox(height: 8),
-                        Text('Excellent balance', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-                        Text('Keep walking and hydrate today', style: TextStyle(color: Colors.white70)),
+                        Text(l10n.healthScore, style: const TextStyle(color: Colors.white70)),
+                        const SizedBox(height: 8),
+                        Text(l10n.excellentBalance, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                        Text(l10n.keepWalkingHydrate, style: const TextStyle(color: Colors.white70)),
                       ],
                     ),
-                    CircularScore(score: data.healthScore, label: 'Score'),
+                    CircularScore(score: data.healthScore, label: l10n.score),
                   ],
                 ),
               ),
               const SizedBox(height: 18),
               _MetricGrid(cards: [
-                HealthCard(title: 'BMI', value: '${data.bmi}', subtitle: 'Normal', icon: Icons.scale_outlined),
-                HealthCard(title: 'Biological Age', value: '${data.bioAge}', subtitle: '2 years younger', icon: Icons.hourglass_bottom),
-                HealthCard(title: 'Heart Rate', value: '${data.heartRate}', subtitle: 'bpm', icon: Icons.favorite_outline),
-                HealthCard(title: 'Blood Pressure', value: data.bp, subtitle: 'Healthy', icon: Icons.bloodtype_outlined),
-                HealthCard(title: 'Sleep', value: '${data.sleep}h', subtitle: 'Good', icon: Icons.bedtime_outlined),
-                HealthCard(title: 'Water', value: data.water, subtitle: 'Goal 3L', icon: Icons.water_drop_outlined),
-                HealthCard(title: 'Steps', value: '${data.steps}', subtitle: 'Daily', icon: Icons.directions_walk),
-                HealthCard(title: 'Calories', value: '${data.calories}', subtitle: 'Burned', icon: Icons.local_fire_department_outlined),
+                HealthCard(title: l10n.bmi, value: '${data.bmi}', subtitle: l10n.normal, icon: Icons.scale_outlined),
+                HealthCard(title: l10n.biologicalAge, value: '${data.bioAge}', subtitle: l10n.twoYearsYounger, icon: Icons.hourglass_bottom),
+                HealthCard(title: l10n.heartRate, value: '${data.heartRate}', subtitle: l10n.bpm, icon: Icons.favorite_outline),
+                HealthCard(title: l10n.bloodPressure, value: data.bp, subtitle: l10n.healthy, icon: Icons.bloodtype_outlined),
+                HealthCard(title: l10n.sleep, value: '${data.sleep}h', subtitle: l10n.good, icon: Icons.bedtime_outlined),
+                HealthCard(title: l10n.water, value: data.water, subtitle: l10n.goalThreeL, icon: Icons.water_drop_outlined),
+                HealthCard(title: l10n.steps, value: '${data.steps}', subtitle: l10n.dailyLabel, icon: Icons.directions_walk),
+                HealthCard(title: l10n.calories, value: '${data.calories}', subtitle: l10n.burned, icon: Icons.local_fire_department_outlined),
               ]),
               const SizedBox(height: 18),
               const _FeatureGrid(),
@@ -286,9 +490,10 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final games = ['Eye Test', 'Memory Test', 'Brain Speed', 'Reaction Test', 'Color Blind Test', 'Hearing Test', 'Lung Breathing', 'Heart Fitness'];
+    final l10n = context.l10n;
+    final games = [l10n.eyeTest, l10n.memoryTest, l10n.brainSpeed, l10n.reactionTest, l10n.colorBlindTest, l10n.hearingTest, l10n.lungBreathing, l10n.heartFitness];
     return AppScaffold(
-      title: 'Mini Games',
+      title: l10n.miniGames,
       child: Column(
         children: [
           _SimpleGrid(
@@ -301,7 +506,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
             AsyncView<Map<String, dynamic>>(
               load: () => _result!,
               builder: (_, data) => GradientCard(
-                child: Text('Result: ${data['score']} - ${data['status']}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                child: Text('${l10n.result}: ${data['score']} - ${l10n.good}', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -316,17 +521,18 @@ class MedicalReportUploadScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Medical Report Upload',
+      title: l10n.medicalReportUpload,
       child: Column(
         children: [
-          const _UploadBox(label: 'Upload PDF', icon: Icons.picture_as_pdf_outlined),
+          _UploadBox(label: l10n.uploadPdf, icon: Icons.picture_as_pdf_outlined),
           const SizedBox(height: 14),
-          const _UploadBox(label: 'Upload Image', icon: Icons.image_outlined),
+          _UploadBox(label: l10n.uploadImage, icon: Icons.image_outlined),
           const SizedBox(height: 18),
           AsyncView<Map<String, dynamic>>(
             load: _api.reportAnalysis,
-            builder: (_, data) => _InfoList(title: 'Dummy AI Report', items: data),
+            builder: (_, data) => _InfoList(title: l10n.dummyAiReport, items: _reportAnalysisItems(l10n)),
           ),
         ],
       ),
@@ -339,21 +545,22 @@ class HealthAnalysisScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/analysis'),
       body: AppScaffold(
-        title: 'Health Analysis',
+        title: l10n.healthAnalysis,
         child: AsyncView<Map<String, dynamic>>(
           load: _api.analysis,
           builder: (_, data) => Column(
             children: [
-              Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [CircularScore(score: data['healthScore'] as int, label: 'Health'), CircularScore(score: 84, label: 'Sleep')]),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [CircularScore(score: data['healthScore'] as int, label: l10n.health), CircularScore(score: 84, label: l10n.sleep)]),
               const SizedBox(height: 18),
-              _InfoList(title: 'Vitals', items: data),
+              _InfoList(title: l10n.vitals, items: _analysisItems(l10n)),
               const SizedBox(height: 18),
               const MiniChart(values: [68, 72, 80, 76, 86, 91, 92]),
               const SizedBox(height: 18),
-              PrimaryButton(label: 'Open AI Health Report', icon: Icons.auto_awesome, onPressed: () => context.go('/ai-report')),
+              PrimaryButton(label: l10n.openAiHealthReport, icon: Icons.auto_awesome, onPressed: () => context.go('/ai-report')),
             ],
           ),
         ),
@@ -367,24 +574,18 @@ class AiHealthReportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sections = {
-      'Health Summary': 'Your core markers are stable with strong activity consistency.',
-      'Detected Risks': 'Low cardiovascular risk. Cholesterol needs light attention.',
-      'Lifestyle Suggestions': 'Add two strength sessions and keep sleep above seven hours.',
-      'Priority Level': 'Medium priority: nutrition optimization.',
-      'Healthy Habits': 'Walking, hydration, and steady sleep are working well.',
-      'Doctor Recommendation': 'Routine annual checkup is enough unless symptoms change.',
-    };
+    final l10n = context.l10n;
+    final sections = _aiReportSections(l10n);
     return AppScaffold(
-      title: 'AI Health Report',
+      title: l10n.aiHealthReport,
       child: Column(
         children: [
-          _InfoList(title: 'Heal Gui AI Analysis', items: sections),
+          _InfoList(title: l10n.healGuiAiAnalysis, items: sections),
           const SizedBox(height: 18),
           Row(children: [
-            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.share_outlined), label: const Text('Share Report'))),
+            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.share_outlined), label: Text(l10n.shareReport))),
             const SizedBox(width: 12),
-            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.download_outlined), label: const Text('Download PDF'))),
+            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.download_outlined), label: Text(l10n.downloadPdf))),
           ]),
         ],
       ),
@@ -401,24 +602,22 @@ class AiChatScreen extends StatefulWidget {
 
 class _AiChatScreenState extends State<AiChatScreen> {
   final _controller = TextEditingController();
-  final _messages = <({String text, bool user})>[
-    (text: 'Hi John, I can explain your health score, reports, diet, and sleep.', user: false),
-  ];
+  final _messages = <({String key, bool user})>[(key: 'chatGreeting', user: false)];
   bool _typing = false;
 
   Future<void> _send([String? preset]) async {
     final text = preset ?? _controller.text.trim();
     if (text.isEmpty) return;
     setState(() {
-      _messages.add((text: text, user: true));
+      _messages.add((key: text, user: true));
       _typing = true;
       _controller.clear();
     });
-    final reply = await _api.chat(text);
+    await _api.chat(text);
     if (!mounted) return;
     setState(() {
       _typing = false;
-      _messages.add((text: reply, user: false));
+      _messages.add((key: 'chatReply', user: false));
     });
   }
 
@@ -430,11 +629,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final suggestions = ['What is my BMI?', 'Analyze my report', 'Suggest healthy food', "Today's workout", 'Can I improve my sleep?'];
+    final l10n = context.l10n;
+    final suggestions = [l10n.whatIsMyBmi, l10n.analyzeMyReport, l10n.suggestHealthyFood, l10n.todaysWorkout, l10n.improveMySleep];
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/chat'),
-      appBar: AppBar(
-        title: const Text('Heal Gui AI Assistant'),
+      appBar: AppNavBar(
+        title: l10n.healGuiAiAssistant,
         actions: [IconButton(onPressed: () => setState(_messages.clear), icon: const Icon(Icons.delete_outline))],
       ),
       body: SafeArea(
@@ -455,9 +655,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 padding: const EdgeInsets.all(16),
                 itemCount: _messages.length + (_typing ? 1 : 0),
                 itemBuilder: (_, i) {
-                  if (_typing && i == _messages.length) return const _ChatBubble(text: 'Typing...', user: false);
+                  if (_typing && i == _messages.length) return _ChatBubble(text: l10n.typing, user: false);
                   final message = _messages[i];
-                  return _ChatBubble(text: '${message.text}\n${TimeOfDay.now().format(context)}', user: message.user);
+                  return _ChatBubble(text: '${_chatMessageText(l10n, message.key)}\n${TimeOfDay.now().format(context)}', user: message.user);
                 },
               ),
             ),
@@ -470,7 +670,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     child: TextField(
                       controller: _controller,
                       onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(labelText: 'Ask about your health', prefixIcon: Icon(Icons.auto_awesome)),
+                      decoration: InputDecoration(labelText: l10n.askAboutHealth, prefixIcon: const Icon(Icons.auto_awesome)),
                     ),
                   ),
                   IconButton(onPressed: () {}, icon: const Icon(Icons.mic_none)),
@@ -498,21 +698,22 @@ class _FutureHealthScreenState extends State<FutureHealthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sliders = {'Weight': weight, 'Walking': walking, 'Sleep': sleep, 'Water': water, 'Exercise': exercise, 'Smoking': smoking, 'Alcohol': alcohol};
+    final l10n = context.l10n;
+    final sliders = {'weight': weight, 'walking': walking, 'sleep': sleep, 'water': water, 'exercise': exercise, 'smoking': smoking, 'alcohol': alcohol};
     return AppScaffold(
-      title: 'Future Health',
+      title: l10n.futureHealth,
       child: Column(
         children: [
           for (final item in sliders.entries)
             ListTile(
-              title: Text(item.key),
-              subtitle: Slider(value: item.value, max: item.key == 'Weight' ? 140 : 10, onChanged: (value) => setState(() => _setSlider(item.key, value))),
+              title: Text(_sliderLabel(l10n, item.key)),
+              subtitle: Slider(value: item.value, max: _sliderMax(item.key), onChanged: (value) => setState(() => _setSlider(item.key, value))),
               trailing: Text(item.value.toStringAsFixed(1)),
             ),
-          PrimaryButton(label: 'Predict', icon: Icons.insights_outlined, onPressed: () => setState(() => prediction = _api.futureHealth())),
+          PrimaryButton(label: l10n.predict, icon: Icons.insights_outlined, onPressed: () => setState(() => prediction = _api.futureHealth())),
           if (prediction != null) ...[
             const SizedBox(height: 18),
-            AsyncView<Map<String, dynamic>>(load: () => prediction!, builder: (_, data) => _InfoList(title: 'Prediction', items: data)),
+            AsyncView<Map<String, dynamic>>(load: () => prediction!, builder: (_, data) => _InfoList(title: l10n.prediction, items: _predictionItems(l10n))),
             const MiniChart(values: [91, 92, 94, 95, 97]),
           ],
         ],
@@ -522,19 +723,19 @@ class _FutureHealthScreenState extends State<FutureHealthScreen> {
 
   void _setSlider(String key, double value) {
     switch (key) {
-      case 'Weight':
+      case 'weight':
         weight = value;
-      case 'Walking':
+      case 'walking':
         walking = value;
-      case 'Sleep':
+      case 'sleep':
         sleep = value;
-      case 'Water':
+      case 'water':
         water = value;
-      case 'Exercise':
+      case 'exercise':
         exercise = value;
-      case 'Smoking':
+      case 'smoking':
         smoking = value;
-      case 'Alcohol':
+      case 'alcohol':
         alcohol = value;
     }
   }
@@ -545,23 +746,16 @@ class DietScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Personalized Diet',
+      title: l10n.personalizedDiet,
       child: AsyncView<Map<String, dynamic>>(
         load: _api.diet,
         builder: (_, data) => Column(
           children: [
-            _InfoList(title: 'Targets', items: data),
+            _InfoList(title: l10n.targets, items: _dietTargets(l10n)),
             const SizedBox(height: 16),
-            _InfoList(title: 'Daily Plan', items: const {
-              'Breakfast': 'Greek yogurt, berries, oats',
-              'Lunch': 'Quinoa bowl with paneer and greens',
-              'Dinner': 'Grilled protein, vegetables, lentil soup',
-              'Snacks': 'Fruit, nuts, coconut water',
-              'BMI Advice': 'Maintain current range with strength work',
-              'Exercise Tips': 'Walk 8k steps and add mobility',
-              'Shopping List': 'Leafy greens, eggs, pulses, curd, citrus',
-            }),
+            _InfoList(title: l10n.dailyPlan, items: _dailyPlan(l10n)),
           ],
         ),
       ),
@@ -574,23 +768,24 @@ class ProgressScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/progress'),
       body: AppScaffold(
-        title: 'Progress',
+        title: l10n.progress,
         child: Column(
           children: [
             SegmentedButton<String>(
-              segments: [ButtonSegment(value: 'W', label: Text('Weekly')), ButtonSegment(value: 'M', label: Text('Monthly')), ButtonSegment(value: 'Y', label: Text('Yearly'))],
+              segments: [ButtonSegment(value: 'W', label: Text(l10n.weekly)), ButtonSegment(value: 'M', label: Text(l10n.monthly)), ButtonSegment(value: 'Y', label: Text(l10n.yearly))],
               selected: {'W'},
               onSelectionChanged: (_) {},
             ),
             const SizedBox(height: 18),
             const MiniChart(values: [72, 71.8, 71.5, 71.6, 71.2, 70.9, 70.6]),
             const SizedBox(height: 18),
-            _SimpleGrid(items: const ['Weight', 'BMI', 'Health Score', 'Water Intake', 'Steps', 'Sleep', 'Heart Rate', 'Achievements'], icon: Icons.trending_up, onTap: (_) {}),
+            _SimpleGrid(items: [l10n.weight, l10n.bmi, l10n.healthScore, l10n.waterIntake, l10n.steps, l10n.sleep, l10n.heartRate, l10n.achievements], icon: Icons.trending_up, onTap: (_) {}),
             const SizedBox(height: 18),
-            _InfoList(title: 'Medical Timeline', items: const {'Today': 'AI report generated', 'Last week': 'Blood report analyzed', 'Last month': 'New walking streak achieved'}),
+            _InfoList(title: l10n.medicalTimeline, items: _medicalTimeline(l10n)),
           ],
         ),
       ),
@@ -603,18 +798,19 @@ class ReportHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Report History',
+      title: l10n.reportHistory,
       child: Column(
         children: [
-          const AppTextField(label: 'Search reports', icon: Icons.search),
+          AppTextField(label: l10n.searchReports, icon: Icons.search),
           const SizedBox(height: 16),
-          for (final report in ['Blood Work - Aug', 'AI Health Report', 'Lipid Profile', 'Sleep Summary'])
+          for (final report in [l10n.bloodWorkAug, l10n.aiHealthReportShort, l10n.lipidProfile, l10n.sleepSummary])
             Card(
               child: ListTile(
                 leading: const Icon(Icons.description_outlined),
                 title: Text(report),
-                subtitle: const Text('Previous AI and medical report'),
+                subtitle: Text(l10n.previousReport),
                 trailing: Wrap(spacing: 4, children: const [Icon(Icons.visibility_outlined), Icon(Icons.download_outlined), Icon(Icons.delete_outline)]),
               ),
             ),
@@ -629,19 +825,20 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/profile'),
       body: AppScaffold(
-        title: 'Profile',
+        title: l10n.profile,
         child: Column(
           children: [
             const CircleAvatar(radius: 48, child: Icon(Icons.person, size: 50)),
             const SizedBox(height: 10),
-            const Text('John', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            Text(l10n.profileName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
             const SizedBox(height: 18),
-            for (final item in const ['Edit', 'Medical Details', 'Emergency Contact', 'Notifications', 'Privacy', 'Language', 'About'])
+            for (final item in [l10n.edit, l10n.medicalDetails, l10n.emergencyContact, l10n.notifications, l10n.privacy, l10n.language, l10n.about])
               Card(child: ListTile(title: Text(item), trailing: const Icon(Icons.chevron_right))),
-            PrimaryButton(label: 'Logout', icon: Icons.logout, onPressed: () => context.go('/login')),
+            PrimaryButton(label: l10n.logout, icon: Icons.logout, onPressed: () => context.go('/login')),
           ],
         ),
       ),
@@ -654,17 +851,25 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AppScaffold(
-      title: 'Settings',
+      title: l10n.settings,
       child: Column(
-        children: const [
-          SwitchListTile(value: true, onChanged: null, title: Text('Dark Mode')),
-          SwitchListTile(value: true, onChanged: null, title: Text('Notifications')),
-          ListTile(title: Text('Units'), trailing: Text('Metric')),
-          ListTile(title: Text('Font Size'), trailing: Text('Default')),
-          ListTile(title: Text('Language'), trailing: Text('English')),
-          ListTile(title: Text('Terms')),
-          ListTile(title: Text('Privacy')),
+        children: [
+          SwitchListTile(value: true, onChanged: null, title: Text(l10n.darkMode)),
+          SwitchListTile(value: true, onChanged: null, title: Text(l10n.notifications)),
+          ListTile(title: Text(l10n.units), trailing: Text(l10n.metric)),
+          ListTile(title: Text(l10n.fontSize), trailing: Text(l10n.defaultLabel)),
+          Card(
+            child: Column(
+              children: [
+                ListTile(title: Text(l10n.language)),
+                const LanguageRadioSelector(),
+              ],
+            ),
+          ),
+          ListTile(title: Text(l10n.terms)),
+          ListTile(title: Text(l10n.privacy)),
         ],
       ),
     );
@@ -699,16 +904,17 @@ class _FeatureGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const features = [
-      ('Mini Games', Icons.sports_esports_outlined, '/games'),
-      ('Medical Reports', Icons.upload_file_outlined, '/upload'),
-      ('Health Analysis', Icons.monitor_heart_outlined, '/analysis'),
-      ('AI Chat', Icons.chat_bubble_outline, '/chat'),
-      ('Future Health', Icons.insights_outlined, '/future'),
-      ('Diet', Icons.restaurant_menu, '/diet'),
-      ('Progress', Icons.trending_up, '/progress'),
-      ('Reports', Icons.folder_copy_outlined, '/reports'),
-      ('Profile', Icons.person_outline, '/profile'),
+    final l10n = context.l10n;
+    final features = [
+      (l10n.miniGames, Icons.sports_esports_outlined, '/games'),
+      (l10n.medicalReports, Icons.upload_file_outlined, '/upload'),
+      (l10n.healthAnalysis, Icons.monitor_heart_outlined, '/analysis'),
+      (l10n.aiChat, Icons.chat_bubble_outline, '/chat'),
+      (l10n.futureHealth, Icons.insights_outlined, '/future'),
+      (l10n.diet, Icons.restaurant_menu, '/diet'),
+      (l10n.progress, Icons.trending_up, '/progress'),
+      (l10n.reports, Icons.folder_copy_outlined, '/reports'),
+      (l10n.profile, Icons.person_outline, '/profile'),
     ];
     return LayoutBuilder(
       builder: (_, constraints) {
@@ -770,7 +976,7 @@ class _UploadBox extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
-        child: Column(children: [Icon(icon, size: 42), const SizedBox(height: 10), Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), const Text('Preview ready for dummy analysis')]),
+        child: Column(children: [Icon(icon, size: 42), const SizedBox(height: 10), Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), Text(context.l10n.previewReady)]),
       ),
     );
   }
@@ -839,12 +1045,13 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const destinations = [
-      ('/home', Icons.home_outlined, 'Home'),
-      ('/analysis', Icons.monitor_heart_outlined, 'Analysis'),
-      ('/chat', Icons.chat_bubble_outline, 'AI Chat'),
-      ('/progress', Icons.trending_up, 'Progress'),
-      ('/profile', Icons.person_outline, 'Profile'),
+    final l10n = context.l10n;
+    final destinations = [
+      ('/home', Icons.home_outlined, l10n.home),
+      ('/analysis', Icons.monitor_heart_outlined, l10n.analysis),
+      ('/chat', Icons.chat_bubble_outline, l10n.aiChat),
+      ('/progress', Icons.trending_up, l10n.progress),
+      ('/profile', Icons.person_outline, l10n.profile),
     ];
     final index = destinations.indexWhere((item) => item.$1 == current);
     return NavigationBar(
