@@ -1,10 +1,23 @@
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/screens.dart';
 
 class AppRoutes {
+  static const _publicRoutes = {'/', '/login', '/signup'};
+
   static final router = GoRouter(
     initialLocation: '/',
+    redirect: (context, state) async {
+      final path = state.uri.path;
+      final prefs = await SharedPreferences.getInstance();
+      final isLoggedIn = prefs.getString('access_token') != null;
+      final isPublicRoute = _publicRoutes.contains(path);
+
+      if (!isLoggedIn && !isPublicRoute) return '/login';
+      if (isLoggedIn && (path == '/login' || path == '/signup')) return '/home';
+      return null;
+    },
     routes: [
       GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),

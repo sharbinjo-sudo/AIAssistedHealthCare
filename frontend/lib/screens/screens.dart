@@ -7,11 +7,9 @@ import '../l10n/generated/app_localizations.dart';
 import '../l10n/l10n.dart';
 import '../models/health_models.dart';
 import '../services/api_service.dart';
-import '../services/dummy_api.dart';
 import '../widgets/common_widgets.dart';
 
 final _api = ApiService();
-const _dummyApi = DummyApiService();
 final _digitsOnly = [FilteringTextInputFormatter.digitsOnly];
 final _decimalOnly = [
   TextInputFormatter.withFunction((oldValue, newValue) {
@@ -57,8 +55,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) context.go('/login');
+    Future.delayed(const Duration(milliseconds: 1500), () async {
+      final route = await _api.hasSession() ? '/home' : '/login';
+      if (mounted) context.go(route);
     });
   }
 
@@ -864,7 +863,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
           _SimpleGrid(
             items: games,
             icon: Icons.sports_esports_outlined,
-            onTap: (_) => setState(() => _result = _dummyApi.gameResult()),
+            onTap: (game) => setState(() => _result = _api.createGameResult(game)),
           ),
           if (_result != null) ...[
             const SizedBox(height: 18),
@@ -1000,12 +999,20 @@ class _AiChatScreenState extends State<AiChatScreen> {
       _typing = true;
       _controller.clear();
     });
-    await _dummyApi.chat(text);
-    if (!mounted) return;
-    setState(() {
-      _typing = false;
-      _messages.add((key: 'chatReply', user: false));
-    });
+    try {
+      final response = await _api.chat(text);
+      if (!mounted) return;
+      setState(() {
+        _typing = false;
+        _messages.add((key: '${response['reply'] ?? context.l10n.chatReply}', user: false));
+      });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _typing = false;
+        _messages.add((key: error.message, user: false));
+      });
+    }
   }
 
   @override
@@ -1268,6 +1275,80 @@ class ProfileScreen extends StatelessWidget {
     if (context.mounted) context.go('/login');
   }
 
+  void _showMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showLanguageSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(
+                  context.l10n.language,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const LanguageRadioSelector(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showProfileDetails(
+    BuildContext context,
+    Map<String, dynamic> profile,
+    String title,
+    List<String> fields,
+  ) {
+    final l10n = context.l10n;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final field in fields)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_personalDetailLabel(l10n, field)),
+                  subtitle: Text('${profile[_profileFieldMap[field]] ?? l10n.defaultLabel}'),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  void _showPrivacy(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.privacy),
+        content: const Text(
+          'Your health details are stored for your account and used to personalize dashboard, analysis, diet, and progress insights.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -1283,8 +1364,65 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 10),
               Text('${profile['name'] ?? l10n.profileName}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
               const SizedBox(height: 18),
-              for (final item in [l10n.edit, l10n.medicalDetails, l10n.emergencyContact, l10n.notifications, l10n.privacy, l10n.language, l10n.about])
-                Card(child: ListTile(title: Text(item), trailing: const Icon(Icons.chevron_right))),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.edit),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.go('/personal-details'),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.medicalDetails),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showProfileDetails(
+                    context,
+                    profile,
+                    l10n.medicalDetails,
+                    const ['age', 'gender', 'height', 'weight', 'bloodPressure', 'heartRate', 'bloodGroup'],
+                  ),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.emergencyContact),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showProfileDetails(
+                    context,
+                    profile,
+                    l10n.emergencyContact,
+                    const ['emergencyContact'],
+                  ),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.notifications),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showMessage(context, '${l10n.notifications}: ${l10n.defaultLabel}'),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.privacy),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showPrivacy(context),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.language),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showLanguageSheet(context),
+                ),
+              ),
+              Card(
+                child: ListTile(
+                  title: Text(l10n.about),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showAboutDialog(context: context, applicationName: l10n.appTitle),
+                ),
+              ),
               PrimaryButton(label: l10n.logout, icon: Icons.logout, onPressed: () => _logout(context)),
             ],
           ),
