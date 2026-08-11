@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/colors.dart';
@@ -137,16 +138,43 @@ class PrimaryButton extends StatelessWidget {
 }
 
 class AppTextField extends StatelessWidget {
-  const AppTextField({super.key, required this.label, this.icon, this.obscure = false});
+  const AppTextField({
+    super.key,
+    required this.label,
+    this.icon,
+    this.obscure = false,
+    this.controller,
+    this.keyboardType,
+    this.onChanged,
+    this.inputFormatters,
+    this.maxLength,
+    this.helperText,
+  });
   final String label;
   final IconData? icon;
   final bool obscure;
+  final TextEditingController? controller;
+  final TextInputType? keyboardType;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+  final int? maxLength;
+  final String? helperText;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      controller: controller,
       obscureText: obscure,
-      decoration: InputDecoration(labelText: label, prefixIcon: icon == null ? null : Icon(icon)),
+      keyboardType: keyboardType,
+      onChanged: onChanged,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helperText,
+        counterText: '',
+        prefixIcon: icon == null ? null : Icon(icon),
+      ),
     );
   }
 }
@@ -171,8 +199,9 @@ class AppDropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedValue = items.contains(value) ? value : null;
     return DropdownButtonFormField<String>(
-      initialValue: value,
+      initialValue: selectedValue,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
       decoration: InputDecoration(labelText: label, prefixIcon: icon == null ? null : Icon(icon)),
