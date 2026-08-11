@@ -137,7 +137,7 @@ class PrimaryButton extends StatelessWidget {
   }
 }
 
-class AppTextField extends StatelessWidget {
+class AppTextField extends StatefulWidget {
   const AppTextField({
     super.key,
     required this.label,
@@ -161,19 +161,45 @@ class AppTextField extends StatelessWidget {
   final String? helperText;
 
   @override
+  State<AppTextField> createState() => _AppTextFieldState();
+}
+
+class _AppTextFieldState extends State<AppTextField> {
+  late bool _obscured;
+
+  @override
+  void initState() {
+    super.initState();
+    _obscured = widget.obscure;
+  }
+
+  @override
+  void didUpdateWidget(covariant AppTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.obscure != widget.obscure) _obscured = widget.obscure;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      onChanged: onChanged,
-      inputFormatters: inputFormatters,
-      maxLength: maxLength,
+      controller: widget.controller,
+      obscureText: _obscured,
+      keyboardType: widget.keyboardType,
+      onChanged: widget.onChanged,
+      inputFormatters: widget.inputFormatters,
+      maxLength: widget.maxLength,
       decoration: InputDecoration(
-        labelText: label,
-        helperText: helperText,
+        labelText: widget.label,
+        helperText: widget.helperText,
         counterText: '',
-        prefixIcon: icon == null ? null : Icon(icon),
+        prefixIcon: widget.icon == null ? null : Icon(widget.icon),
+        suffixIcon: widget.obscure
+            ? IconButton(
+                tooltip: _obscured ? 'Show password' : 'Hide password',
+                onPressed: () => setState(() => _obscured = !_obscured),
+                icon: Icon(_obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+              )
+            : null,
       ),
     );
   }

@@ -72,9 +72,13 @@ class ApiService {
     await _request('DELETE', '/reports/$id/');
   }
 
+  Future<Map<String, dynamic>> createGameResult(String gameName) => _request('POST', '/games/', body: {'gameName': gameName});
+
   Future<Map<String, dynamic>> analysis() => _request('GET', '/analysis/');
 
   Future<Map<String, dynamic>> aiReport() => _request('GET', '/ai-report/');
+
+  Future<Map<String, dynamic>> chat(String message) => _request('POST', '/chat/', body: {'message': message});
 
   Future<Map<String, dynamic>> futureHealth(Map<String, dynamic> values) => _request('POST', '/future-health/', body: values);
 
@@ -91,12 +95,18 @@ class ApiService {
     if (refresh != null) {
       try {
         await _request('POST', '/logout/', body: {'refresh': refresh});
-      } on ApiException {
-        // Local token cleanup should still happen if the server token is already invalid.
+      } catch (_) {
+        // Local token cleanup should still happen if the server is unavailable
+        // or the refresh token is already invalid.
       }
     }
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
+  }
+
+  Future<bool> hasSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token') != null;
   }
 
   Future<Map<String, dynamic>> _request(String method, String path, {Map<String, dynamic>? body, bool auth = true}) async {
