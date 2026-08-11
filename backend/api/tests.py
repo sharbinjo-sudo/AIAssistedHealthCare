@@ -7,7 +7,7 @@ class HealthApiTests(APITestCase):
     def register_and_authenticate(self):
         response = self.client.post(
             reverse('register'),
-            {'name': 'John', 'email': 'john@example.com', 'password': 'StrongPass123!'},
+            {'name': 'John', 'email': 'john@example.com', 'password': 'Str0ng!A'},
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -19,7 +19,7 @@ class HealthApiTests(APITestCase):
         self.register_and_authenticate()
         login = self.client.post(
             reverse('login'),
-            {'email': 'john@example.com', 'password': 'StrongPass123!'},
+            {'email': 'john@example.com', 'password': 'Str0ng!A'},
             format='json',
         )
         self.assertEqual(login.status_code, status.HTTP_200_OK)
@@ -35,6 +35,7 @@ class HealthApiTests(APITestCase):
         dashboard = self.client.get(reverse('dashboard'))
         self.assertEqual(dashboard.status_code, status.HTTP_200_OK)
         self.assertIn('healthScore', dashboard.data['data'])
+        self.assertEqual(dashboard.data['data']['bioAge'], 26)
 
     def test_protected_endpoints_require_jwt(self):
         response = self.client.get(reverse('dashboard'))
@@ -49,3 +50,19 @@ class HealthApiTests(APITestCase):
         analysis = self.client.get('/api/reports/analysis/')
         self.assertEqual(analysis.status_code, status.HTTP_200_OK)
         self.assertEqual(analysis.data['data']['summary'], 'Healthy')
+
+    def test_rejects_malformed_signup_and_profile_input(self):
+        weak_password = self.client.post(
+            reverse('register'),
+            {'name': 'John', 'email': 'bad@example.com', 'phone': '12345', 'password': 'password'},
+            format='json',
+        )
+        self.assertEqual(weak_password.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.register_and_authenticate()
+        bad_profile = self.client.patch(
+            reverse('profile'),
+            {'age': 200, 'emergency_contact': 'abcdef', 'blood_pressure': 'high'},
+            format='json',
+        )
+        self.assertEqual(bad_profile.status_code, status.HTTP_400_BAD_REQUEST)

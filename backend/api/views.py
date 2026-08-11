@@ -44,9 +44,20 @@ def calculate_dashboard_from_profile(user):
         if height_m > 0:
             bmi = round(float(profile.weight) / (height_m * height_m), 1)
 
+    health_score = 91
+    if bmi < 18.5 or bmi >= 30:
+        health_score -= 8
+    elif bmi >= 25:
+        health_score -= 4
+
+    actual_age = profile.age or 25
+    bio_age = max(1, actual_age - 2 if health_score >= 85 else actual_age + 1)
+
     return DashboardSnapshot.objects.create(
         user=user,
+        health_score=health_score,
         bmi=bmi,
+        bio_age=bio_age,
         bp=profile.blood_pressure or '120/80',
         heart_rate=profile.heart_rate or 74,
         sleep=profile.sleep_hours or 7.8,
@@ -159,7 +170,7 @@ class HealthAnalysisView(APIView):
         data = {
             'healthScore': snapshot.health_score,
             'risk': 'Low',
-            'bioAge': snapshot.bio_age + 1,
+            'bioAge': snapshot.bio_age,
             'bmi': float(snapshot.bmi),
             'stress': 'Medium',
         }
@@ -297,7 +308,11 @@ class ProgressEntryViewSet(viewsets.ModelViewSet):
     serializer_class = ProgressEntrySerializer
 
     def get_queryset(self):
-        return ProgressEntry.objects.filter(user=self.request.user)
+        queryset = ProgressEntry.objects.filter(user=self.request.user)
+        period = self.request.query_params.get('period')
+        if period in {'W', 'M', 'Y'}:
+            queryset = queryset.filter(period=period)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

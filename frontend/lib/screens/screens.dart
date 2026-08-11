@@ -1,14 +1,47 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../l10n/l10n.dart';
 import '../models/health_models.dart';
+import '../services/api_service.dart';
 import '../services/dummy_api.dart';
 import '../widgets/common_widgets.dart';
 
-const _api = DummyApiService();
+final _api = ApiService();
+const _dummyApi = DummyApiService();
+final _digitsOnly = [FilteringTextInputFormatter.digitsOnly];
+final _decimalOnly = [
+  TextInputFormatter.withFunction((oldValue, newValue) {
+    return RegExp(r'^\d*\.?\d{0,1}$').hasMatch(newValue.text) ? newValue : oldValue;
+  }),
+];
+final _nameFormatters = [FilteringTextInputFormatter.allow(RegExp(r"[a-zA-Z\s.'-]"))];
+final _emailFormatters = [FilteringTextInputFormatter.deny(RegExp(r'\s'))];
+
+bool _isValidEmail(String value) => RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
+
+bool _isValidPhone(String value) => RegExp(r'^\d{10}$').hasMatch(value.trim());
+
+String? _passwordValidationError(String value) {
+  if (value.length < 8) return 'Password must be at least 8 characters.';
+  if (value.length > 10) return 'Password must be 10 characters or fewer.';
+  if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Password needs at least one uppercase letter.';
+  if (!RegExp(r'[a-z]').hasMatch(value)) return 'Password needs at least one lowercase letter.';
+  if (!RegExp(r'\d').hasMatch(value)) return 'Password needs at least one number.';
+  if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;/`~]').hasMatch(value)) return 'Password needs at least one symbol.';
+  return null;
+}
+
+String? _rangeValidationError(String label, String value, {required double min, required double max}) {
+  if (value.trim().isEmpty) return null;
+  final number = double.tryParse(value.trim());
+  if (number == null) return '$label must be a number.';
+  if (number < min || number > max) return '$label must be between ${min.toStringAsFixed(0)} and ${max.toStringAsFixed(0)}.';
+  return null;
+}
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -82,15 +115,50 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _loading = false;
 
   Future<void> _login() async {
+    final error = _loginValidationError();
+    if (error != null) {
+      _showMessage(error);
+      return;
+    }
     setState(() => _loading = true);
-    await _api.login();
+    try {
+      await _api.login(email: _emailController.text.trim(), password: _passwordController.text);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      _showMessage(error.message);
+      setState(() => _loading = false);
+      return;
+    }
     if (!mounted) return;
     setState(() => _loading = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.l10n.loginSuccessful)));
     context.go('/personal-details');
+  }
+
+  String? _loginValidationError() {
+    if (!_isValidEmail(_emailController.text)) return 'Enter a valid email address.';
+    if (_passwordController.text.isEmpty) return 'Password is required.';
+    return null;
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _googleUnavailable() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google sign-in is not configured for this local Django backend.')));
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -104,13 +172,19 @@ class _LoginScreenState extends State<LoginScreen> {
         children: [
           const Hero(tag: 'logo', child: Icon(Icons.health_and_safety, size: 62)),
           const SizedBox(height: 28),
-          AppTextField(label: l10n.email, icon: Icons.mail_outline),
+          AppTextField(
+            label: l10n.email,
+            icon: Icons.mail_outline,
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            inputFormatters: _emailFormatters,
+          ),
           const SizedBox(height: 14),
-          AppTextField(label: l10n.password, icon: Icons.lock_outline, obscure: true),
+          AppTextField(label: l10n.password, icon: Icons.lock_outline, obscure: true, controller: _passwordController, maxLength: 10),
           Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () {}, child: Text(l10n.forgotPassword))),
           PrimaryButton(label: _loading ? l10n.signingIn : l10n.login, icon: Icons.arrow_forward, onPressed: _loading ? null : _login),
           const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: _login, icon: const Icon(Icons.g_mobiledata), label: Text(l10n.continueWithGoogle)),
+          OutlinedButton.icon(onPressed: _googleUnavailable, icon: const Icon(Icons.g_mobiledata), label: Text(l10n.continueWithGoogle)),
           const SizedBox(height: 10),
           TextButton(onPressed: () => context.go('/signup'), child: Text(l10n.createNewAccount)),
         ],
@@ -127,12 +201,59 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _loading = false;
 
   Future<void> _submit() async {
+    final validationError = _signUpValidationError();
+    if (validationError != null) {
+      _showMessage(validationError);
+      return;
+    }
+    if (_passwordController.text != _confirmPasswordController.text) {
+      _showMessage('Passwords do not match.');
+      return;
+    }
     setState(() => _loading = true);
-    await _api.signUp();
+    try {
+      await _api.signUp(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        password: _passwordController.text,
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      _showMessage(error.message);
+      setState(() => _loading = false);
+      return;
+    }
     if (mounted) context.go('/personal-details');
+  }
+
+  String? _signUpValidationError() {
+    if (_nameController.text.trim().length < 2) return 'Name must contain at least 2 letters.';
+    if (!_isValidEmail(_emailController.text)) return 'Enter a valid email address.';
+    if (!_isValidPhone(_phoneController.text)) return 'Phone number must contain exactly 10 digits.';
+    return _passwordValidationError(_passwordController.text);
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -143,13 +264,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
       child: Column(
         children: [
           for (final field in [
-            (l10n.name, Icons.person_outline, false),
-            (l10n.email, Icons.mail_outline, false),
-            (l10n.phone, Icons.call_outlined, false),
-            (l10n.password, Icons.lock_outline, true),
-            (l10n.confirmPassword, Icons.verified_user_outlined, true),
+            (l10n.name, Icons.person_outline, false, _nameController, TextInputType.name, _nameFormatters, 80, null),
+            (l10n.email, Icons.mail_outline, false, _emailController, TextInputType.emailAddress, _emailFormatters, 120, null),
+            (l10n.phone, Icons.call_outlined, false, _phoneController, TextInputType.phone, _digitsOnly, 10, '10 digits only'),
+            (l10n.password, Icons.lock_outline, true, _passwordController, TextInputType.visiblePassword, null, 10, '8-10 chars: upper, lower, number, symbol'),
+            (l10n.confirmPassword, Icons.verified_user_outlined, true, _confirmPasswordController, TextInputType.visiblePassword, null, 10, null),
           ]) ...[
-            AppTextField(label: field.$1, icon: field.$2, obscure: field.$3),
+            AppTextField(
+              label: field.$1,
+              icon: field.$2,
+              obscure: field.$3,
+              controller: field.$4,
+              keyboardType: field.$5,
+              inputFormatters: field.$6,
+              maxLength: field.$7,
+              helperText: field.$8,
+            ),
             const SizedBox(height: 14),
           ],
           PrimaryButton(label: _loading ? l10n.creating : l10n.signUp, icon: Icons.check_circle_outline, onPressed: _loading ? null : _submit),
@@ -167,15 +297,116 @@ class PersonalDetailsScreen extends StatefulWidget {
 }
 
 class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
+  late final Map<String, TextEditingController> _controllers = {
+    for (final field in _personalDetailFields.whereType<String>())
+      if (!_personalDetailDropdownOptions.containsKey(field)) field: TextEditingController(),
+  };
   bool _loading = false;
   final Map<String, String?> _dropdownValues = {
     for (final field in _personalDetailDropdownOptions.keys) field: null,
   };
 
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await _api.profile();
+      if (!mounted) return;
+      setState(() {
+        for (final entry in _profileFieldMap.entries) {
+          final value = profile[entry.value];
+          if (value == null) continue;
+          final stringValue = '$value'.trim();
+          if (stringValue.isEmpty) continue;
+          if (_controllers.containsKey(entry.key)) {
+            _controllers[entry.key]!.text = stringValue;
+          } else if (_dropdownValues.containsKey(entry.key)) {
+            final options = _personalDetailDropdownOptions[entry.key] ?? const <String>[];
+            _dropdownValues[entry.key] = options.contains(stringValue) ? stringValue : null;
+          }
+        }
+      });
+    } on ApiException {
+      // A first-time profile may not have meaningful values yet.
+    }
+  }
+
   Future<void> _save() async {
+    final validationError = _profileValidationError(context.l10n);
+    if (validationError != null) {
+      _showMessage(validationError);
+      return;
+    }
     setState(() => _loading = true);
-    await _api.saveProfile();
+    try {
+      await _api.saveProfile(_profilePayload());
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      _showMessage(error.message);
+      setState(() => _loading = false);
+      return;
+    }
     if (mounted) context.go('/home');
+  }
+
+  String? _profileValidationError(AppLocalizations l10n) {
+    for (final entry in _profileFieldMap.entries) {
+      final textValue = _controllers[entry.key]?.text.trim();
+      final dropdownValue = _dropdownValues[entry.key];
+      if ((textValue == null || textValue.isEmpty) && (dropdownValue == null || dropdownValue.isEmpty)) {
+        return '${_personalDetailLabel(l10n, entry.key)} is required.';
+      }
+    }
+    final checks = [
+      _rangeValidationError(l10n.age, _controllers['age']?.text ?? '', min: 1, max: 120),
+      _rangeValidationError(l10n.height, _controllers['height']?.text ?? '', min: 40, max: 260),
+      _rangeValidationError(l10n.weight, _controllers['weight']?.text ?? '', min: 2, max: 300),
+      _rangeValidationError(l10n.heartRate, _controllers['heartRate']?.text ?? '', min: 30, max: 220),
+      _rangeValidationError(l10n.sleepHours, _controllers['sleepHours']?.text ?? '', min: 0, max: 24),
+    ];
+    for (final error in checks) {
+      if (error != null) return error;
+    }
+    final emergencyContact = _controllers['emergencyContact']?.text.trim() ?? '';
+    if (emergencyContact.isNotEmpty && !_isValidPhone(emergencyContact)) {
+      return '${l10n.emergencyContact} must contain exactly 10 digits.';
+    }
+    final bloodPressure = _controllers['bloodPressure']?.text.trim() ?? '';
+    if (bloodPressure.isNotEmpty && !RegExp(r'^\d{2,3}/\d{2,3}$').hasMatch(bloodPressure)) {
+      return '${l10n.bloodPressure} must look like 120/80.';
+    }
+    final waterIntake = _controllers['waterIntake']?.text.trim() ?? '';
+    if (waterIntake.isNotEmpty && !RegExp(r'^\d{1,2}(\.\d)?L?$').hasMatch(waterIntake)) {
+      return '${l10n.waterIntake} must look like 2.5L.';
+    }
+    return null;
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Map<String, dynamic> _profilePayload() {
+    final payload = <String, dynamic>{};
+    for (final entry in _profileFieldMap.entries) {
+      final textValue = _controllers[entry.key]?.text.trim();
+      final dropdownValue = _dropdownValues[entry.key];
+      final value = textValue?.isNotEmpty == true ? textValue : dropdownValue;
+      if (value != null && value.toString().trim().isNotEmpty) payload[entry.value] = value;
+    }
+    return payload;
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -204,7 +435,15 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
 
                   final dropdownItems = _personalDetailDropdownOptions[field];
                   if (dropdownItems == null) {
-                    return AppTextField(label: _personalDetailLabel(l10n, field), icon: Icons.monitor_heart_outlined);
+                    return AppTextField(
+                      label: _personalDetailLabel(l10n, field),
+                      icon: Icons.monitor_heart_outlined,
+                      controller: _controllers[field],
+                      keyboardType: _numberFields.contains(field) ? TextInputType.number : TextInputType.text,
+                      inputFormatters: _profileInputFormatters(field),
+                      maxLength: _profileMaxLength(field),
+                      helperText: _profileHelperText(field),
+                    );
                   }
 
                   return AppDropdownField(
@@ -258,6 +497,89 @@ const Map<String, List<String>> _personalDetailDropdownOptions = {
   'alcohol': ['never', 'occasionally', 'frequently'],
   'exercise': ['never', 'oneTwoDaysWeek', 'threeFiveDaysWeek', 'daily'],
 };
+
+const Map<String, String> _profileFieldMap = {
+  'name': 'name',
+  'age': 'age',
+  'gender': 'gender',
+  'height': 'height',
+  'weight': 'weight',
+  'bloodPressure': 'blood_pressure',
+  'heartRate': 'heart_rate',
+  'bloodGroup': 'blood_group',
+  'familyHistory': 'family_history',
+  'allergies': 'allergies',
+  'diabetes': 'diabetes',
+  'smoking': 'smoking',
+  'alcohol': 'alcohol',
+  'exercise': 'exercise',
+  'sleepHours': 'sleep_hours',
+  'waterIntake': 'water_intake',
+  'emergencyContact': 'emergency_contact',
+};
+
+const Set<String> _numberFields = {'age', 'height', 'weight', 'heartRate', 'sleepHours'};
+
+List<TextInputFormatter>? _profileInputFormatters(String field) {
+  switch (field) {
+    case 'age':
+    case 'heartRate':
+    case 'emergencyContact':
+      return _digitsOnly;
+    case 'height':
+    case 'weight':
+    case 'sleepHours':
+      return _decimalOnly;
+    case 'bloodPressure':
+      return [FilteringTextInputFormatter.allow(RegExp(r'[\d/]'))];
+    case 'waterIntake':
+      return [FilteringTextInputFormatter.allow(RegExp(r'[\d.Ll]'))];
+    case 'name':
+      return _nameFormatters;
+  }
+  return null;
+}
+
+int? _profileMaxLength(String field) {
+  switch (field) {
+    case 'age':
+      return 3;
+    case 'height':
+    case 'weight':
+      return 5;
+    case 'heartRate':
+      return 3;
+    case 'sleepHours':
+      return 4;
+    case 'bloodPressure':
+      return 7;
+    case 'emergencyContact':
+      return 10;
+    case 'waterIntake':
+      return 5;
+    case 'name':
+      return 80;
+  }
+  return 255;
+}
+
+String? _profileHelperText(String field) {
+  switch (field) {
+    case 'bloodPressure':
+      return 'Example: 120/80';
+    case 'emergencyContact':
+      return '10 digits only';
+    case 'height':
+      return 'Centimeters';
+    case 'weight':
+      return 'Kilograms';
+    case 'sleepHours':
+      return '0 to 24 hours';
+    case 'waterIntake':
+      return 'Example: 2.5L';
+  }
+  return null;
+}
 
 String _personalDetailLabel(AppLocalizations l10n, String field) {
   switch (field) {
@@ -335,28 +657,28 @@ String _personalDetailOptionLabel(AppLocalizations l10n, String item) {
   return item;
 }
 
-Map<String, String> _reportAnalysisItems(AppLocalizations l10n) => {
-      l10n.bloodSugar: l10n.normal,
-      l10n.cholesterol: l10n.slightlyHigh,
-      l10n.bloodPressure: '120/80',
-      l10n.summary: l10n.healthy,
+Map<String, dynamic> _reportAnalysisItems(AppLocalizations l10n, Map<String, dynamic> data) => {
+      l10n.bloodSugar: data['bloodSugar'] ?? l10n.normal,
+      l10n.cholesterol: data['cholesterol'] ?? l10n.slightlyHigh,
+      l10n.bloodPressure: data['bp'] ?? '120/80',
+      l10n.summary: data['summary'] ?? l10n.healthy,
     };
 
-Map<String, String> _analysisItems(AppLocalizations l10n) => {
-      l10n.healthScore: '92',
-      l10n.risk: l10n.low,
-      l10n.bioAge: '24',
-      l10n.bmi: '21.9',
-      l10n.stress: l10n.medium,
+Map<String, dynamic> _analysisItems(AppLocalizations l10n, Map<String, dynamic> data) => {
+      l10n.healthScore: data['healthScore'] ?? '92',
+      l10n.risk: data['risk'] ?? l10n.low,
+      l10n.bioAge: data['bioAge'] ?? '24',
+      l10n.bmi: data['bmi'] ?? '21.9',
+      l10n.stress: data['stress'] ?? l10n.medium,
     };
 
-Map<String, String> _aiReportSections(AppLocalizations l10n) => {
-      l10n.healthSummary: l10n.healthSummaryText,
-      l10n.detectedRisks: l10n.detectedRisksText,
-      l10n.lifestyleSuggestions: l10n.lifestyleSuggestionsText,
-      l10n.priorityLevel: l10n.priorityLevelText,
-      l10n.healthyHabits: l10n.healthyHabitsText,
-      l10n.doctorRecommendation: l10n.doctorRecommendationText,
+Map<String, dynamic> _aiReportSections(AppLocalizations l10n, Map<String, dynamic> data) => {
+      l10n.healthSummary: data['Health Summary'] ?? l10n.healthSummaryText,
+      l10n.detectedRisks: data['Detected Risks'] ?? l10n.detectedRisksText,
+      l10n.lifestyleSuggestions: data['Lifestyle Suggestions'] ?? l10n.lifestyleSuggestionsText,
+      l10n.priorityLevel: data['Priority Level'] ?? l10n.priorityLevelText,
+      l10n.healthyHabits: data['Healthy Habits'] ?? l10n.healthyHabitsText,
+      l10n.doctorRecommendation: data['Doctor Recommendation'] ?? l10n.doctorRecommendationText,
     };
 
 String _chatMessageText(AppLocalizations l10n, String key) {
@@ -389,10 +711,10 @@ String _sliderLabel(AppLocalizations l10n, String key) {
   return key;
 }
 
-Map<String, String> _predictionItems(AppLocalizations l10n) => {
-      l10n.futureHealthScore: '97',
-      l10n.bioAge: '21',
-      l10n.risk: l10n.veryLow,
+Map<String, dynamic> _predictionItems(AppLocalizations l10n, Map<String, dynamic> data) => {
+      l10n.futureHealthScore: data['futureHealthScore'] ?? '97',
+      l10n.bioAge: data['bioAge'] ?? '21',
+      l10n.risk: data['risk'] ?? l10n.veryLow,
     };
 
 double _sliderMax(String key) => key == 'weight'
@@ -401,21 +723,41 @@ double _sliderMax(String key) => key == 'weight'
         ? 120
         : 10;
 
-Map<String, String> _dietTargets(AppLocalizations l10n) => {
-      l10n.calories: '2200',
-      l10n.protein: '110g',
-      l10n.water: '3L',
-    };
+Map<String, dynamic> _dietTargets(AppLocalizations l10n, Map<String, dynamic> data) {
+  final targets = data['targets'];
+  return {
+    l10n.calories: targets is Map ? targets['calories'] ?? '2200' : '2200',
+    l10n.protein: targets is Map ? targets['protein'] ?? '110g' : '110g',
+    l10n.water: targets is Map ? targets['water'] ?? '3L' : '3L',
+  };
+}
 
-Map<String, String> _dailyPlan(AppLocalizations l10n) => {
-      l10n.breakfast: l10n.breakfastText,
-      l10n.lunch: l10n.lunchText,
-      l10n.dinner: l10n.dinnerText,
-      l10n.snacks: l10n.snacksText,
-      l10n.bmiAdvice: l10n.bmiAdviceText,
-      l10n.exerciseTips: l10n.exerciseTipsText,
-      l10n.shoppingList: l10n.shoppingListText,
-    };
+Map<String, dynamic> _dailyPlan(AppLocalizations l10n, Map<String, dynamic> data) {
+  final plan = data['dailyPlan'];
+  return {
+    l10n.breakfast: plan is Map ? plan['Breakfast'] ?? l10n.breakfastText : l10n.breakfastText,
+    l10n.lunch: plan is Map ? plan['Lunch'] ?? l10n.lunchText : l10n.lunchText,
+    l10n.dinner: plan is Map ? plan['Dinner'] ?? l10n.dinnerText : l10n.dinnerText,
+    l10n.snacks: plan is Map ? plan['Snacks'] ?? l10n.snacksText : l10n.snacksText,
+    l10n.bmiAdvice: plan is Map ? plan['BMI Advice'] ?? l10n.bmiAdviceText : l10n.bmiAdviceText,
+    l10n.exerciseTips: plan is Map ? plan['Exercise Tips'] ?? l10n.exerciseTipsText : l10n.exerciseTipsText,
+    l10n.shoppingList: plan is Map ? plan['Shopping List'] ?? l10n.shoppingListText : l10n.shoppingListText,
+  };
+}
+
+Map<String, dynamic> _progressItems(AppLocalizations l10n, List<Map<String, dynamic>> entries) {
+  final latest = entries.isEmpty ? <String, dynamic>{} : entries.first;
+  return {
+    l10n.weight: latest['weight'] ?? '70.6',
+    l10n.bmi: latest['bmi'] ?? '22.4',
+    l10n.healthScore: latest['health_score'] ?? '91',
+    l10n.waterIntake: latest['water_intake'] ?? '2.5L',
+    l10n.steps: latest['steps'] ?? '8230',
+    l10n.sleep: latest['sleep'] ?? '7.8',
+    l10n.heartRate: latest['heart_rate'] ?? '74',
+    l10n.achievements: latest['note'] ?? l10n.todayTimeline,
+  };
+}
 
 Map<String, String> _medicalTimeline(AppLocalizations l10n) => {
       l10n.today: l10n.todayTimeline,
@@ -423,56 +765,79 @@ Map<String, String> _medicalTimeline(AppLocalizations l10n) => {
       l10n.lastMonth: l10n.lastMonthTimeline,
     };
 
-class HomeDashboardScreen extends StatelessWidget {
+class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
+
+  @override
+  State<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
+}
+
+class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+  late Future<Map<String, dynamic>> _profileFuture = _api.profile();
+
+  String _dashboardTitle(AppLocalizations l10n, AsyncSnapshot<Map<String, dynamic>> snapshot) {
+    final name = '${snapshot.data?['name'] ?? ''}'.trim();
+    return name.isEmpty ? l10n.helloJohn : 'Hello $name';
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Scaffold(
       bottomNavigationBar: _BottomNav(current: '/home'),
-      body: AppScaffold(
-        title: l10n.helloJohn,
-        showBack: false,
-        actions: [IconButton(onPressed: () => context.go('/settings'), icon: const Icon(Icons.settings_outlined))],
-        child: AsyncView<DashboardData>(
-          load: _api.dashboard,
-          builder: (context, data) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GradientCard(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _profileFuture,
+        builder: (context, profileSnapshot) {
+          return AppScaffold(
+            title: _dashboardTitle(l10n, profileSnapshot),
+            showBack: false,
+            actions: [
+              IconButton(
+                onPressed: () => setState(() => _profileFuture = _api.profile()),
+                icon: const Icon(Icons.refresh_outlined),
+              ),
+              IconButton(onPressed: () => context.go('/settings'), icon: const Icon(Icons.settings_outlined)),
+            ],
+            child: AsyncView<DashboardData>(
+              load: _api.dashboard,
+              builder: (context, data) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GradientCard(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(l10n.healthScore, style: const TextStyle(color: Colors.white70)),
-                        const SizedBox(height: 8),
-                        Text(l10n.excellentBalance, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-                        Text(l10n.keepWalkingHydrate, style: const TextStyle(color: Colors.white70)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(l10n.healthScore, style: const TextStyle(color: Colors.white70)),
+                            const SizedBox(height: 8),
+                            Text(l10n.excellentBalance, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                            Text(l10n.keepWalkingHydrate, style: const TextStyle(color: Colors.white70)),
+                          ],
+                        ),
+                        CircularScore(score: data.healthScore, label: l10n.score),
                       ],
                     ),
-                    CircularScore(score: data.healthScore, label: l10n.score),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 18),
+                  _MetricGrid(cards: [
+                    HealthCard(title: l10n.bmi, value: '${data.bmi}', subtitle: l10n.normal, icon: Icons.scale_outlined),
+                    HealthCard(title: l10n.biologicalAge, value: '${data.bioAge}', subtitle: l10n.twoYearsYounger, icon: Icons.hourglass_bottom),
+                    HealthCard(title: l10n.heartRate, value: '${data.heartRate}', subtitle: l10n.bpm, icon: Icons.favorite_outline),
+                    HealthCard(title: l10n.bloodPressure, value: data.bp, subtitle: l10n.healthy, icon: Icons.bloodtype_outlined),
+                    HealthCard(title: l10n.sleep, value: '${data.sleep}h', subtitle: l10n.good, icon: Icons.bedtime_outlined),
+                    HealthCard(title: l10n.water, value: data.water, subtitle: l10n.goalThreeL, icon: Icons.water_drop_outlined),
+                    HealthCard(title: l10n.steps, value: '${data.steps}', subtitle: l10n.dailyLabel, icon: Icons.directions_walk),
+                    HealthCard(title: l10n.calories, value: '${data.calories}', subtitle: l10n.burned, icon: Icons.local_fire_department_outlined),
+                  ]),
+                  const SizedBox(height: 18),
+                  const _FeatureGrid(),
+                ],
               ),
-              const SizedBox(height: 18),
-              _MetricGrid(cards: [
-                HealthCard(title: l10n.bmi, value: '${data.bmi}', subtitle: l10n.normal, icon: Icons.scale_outlined),
-                HealthCard(title: l10n.biologicalAge, value: '${data.bioAge}', subtitle: l10n.twoYearsYounger, icon: Icons.hourglass_bottom),
-                HealthCard(title: l10n.heartRate, value: '${data.heartRate}', subtitle: l10n.bpm, icon: Icons.favorite_outline),
-                HealthCard(title: l10n.bloodPressure, value: data.bp, subtitle: l10n.healthy, icon: Icons.bloodtype_outlined),
-                HealthCard(title: l10n.sleep, value: '${data.sleep}h', subtitle: l10n.good, icon: Icons.bedtime_outlined),
-                HealthCard(title: l10n.water, value: data.water, subtitle: l10n.goalThreeL, icon: Icons.water_drop_outlined),
-                HealthCard(title: l10n.steps, value: '${data.steps}', subtitle: l10n.dailyLabel, icon: Icons.directions_walk),
-                HealthCard(title: l10n.calories, value: '${data.calories}', subtitle: l10n.burned, icon: Icons.local_fire_department_outlined),
-              ]),
-              const SizedBox(height: 18),
-              const _FeatureGrid(),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -499,7 +864,7 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
           _SimpleGrid(
             items: games,
             icon: Icons.sports_esports_outlined,
-            onTap: (_) => setState(() => _result = _api.gameResult()),
+            onTap: (_) => setState(() => _result = _dummyApi.gameResult()),
           ),
           if (_result != null) ...[
             const SizedBox(height: 18),
@@ -516,8 +881,27 @@ class _MiniGamesScreenState extends State<MiniGamesScreen> {
   }
 }
 
-class MedicalReportUploadScreen extends StatelessWidget {
+class MedicalReportUploadScreen extends StatefulWidget {
   const MedicalReportUploadScreen({super.key});
+
+  @override
+  State<MedicalReportUploadScreen> createState() => _MedicalReportUploadScreenState();
+}
+
+class _MedicalReportUploadScreenState extends State<MedicalReportUploadScreen> {
+  var _analysisKey = 0;
+
+  Future<void> _createReport(String title, String type) async {
+    try {
+      await _api.createReport(title: title, reportType: type);
+      if (!mounted) return;
+      setState(() => _analysisKey++);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.l10n.previewReady)));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -526,13 +910,14 @@ class MedicalReportUploadScreen extends StatelessWidget {
       title: l10n.medicalReportUpload,
       child: Column(
         children: [
-          _UploadBox(label: l10n.uploadPdf, icon: Icons.picture_as_pdf_outlined),
+          _UploadBox(label: l10n.uploadPdf, icon: Icons.picture_as_pdf_outlined, onTap: () => _createReport(l10n.uploadPdf, 'pdf')),
           const SizedBox(height: 14),
-          _UploadBox(label: l10n.uploadImage, icon: Icons.image_outlined),
+          _UploadBox(label: l10n.uploadImage, icon: Icons.image_outlined, onTap: () => _createReport(l10n.uploadImage, 'image')),
           const SizedBox(height: 18),
           AsyncView<Map<String, dynamic>>(
+            key: ValueKey(_analysisKey),
             load: _api.reportAnalysis,
-            builder: (_, data) => _InfoList(title: l10n.dummyAiReport, items: _reportAnalysisItems(l10n)),
+            builder: (_, data) => _InfoList(title: l10n.dummyAiReport, items: _reportAnalysisItems(l10n, data)),
           ),
         ],
       ),
@@ -556,7 +941,7 @@ class HealthAnalysisScreen extends StatelessWidget {
             children: [
               Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [CircularScore(score: data['healthScore'] as int, label: l10n.health), CircularScore(score: 84, label: l10n.sleep)]),
               const SizedBox(height: 18),
-              _InfoList(title: l10n.vitals, items: _analysisItems(l10n)),
+              _InfoList(title: l10n.vitals, items: _analysisItems(l10n, data)),
               const SizedBox(height: 18),
               const MiniChart(values: [68, 72, 80, 76, 86, 91, 92]),
               const SizedBox(height: 18),
@@ -575,19 +960,21 @@ class AiHealthReportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final sections = _aiReportSections(l10n);
     return AppScaffold(
       title: l10n.aiHealthReport,
-      child: Column(
-        children: [
-          _InfoList(title: l10n.healGuiAiAnalysis, items: sections),
-          const SizedBox(height: 18),
-          Row(children: [
-            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.share_outlined), label: Text(l10n.shareReport))),
-            const SizedBox(width: 12),
-            Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.download_outlined), label: Text(l10n.downloadPdf))),
-          ]),
-        ],
+      child: AsyncView<Map<String, dynamic>>(
+        load: _api.aiReport,
+        builder: (_, data) => Column(
+          children: [
+            _InfoList(title: l10n.healGuiAiAnalysis, items: _aiReportSections(l10n, data)),
+            const SizedBox(height: 18),
+            Row(children: [
+              Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.share_outlined), label: Text(l10n.shareReport))),
+              const SizedBox(width: 12),
+              Expanded(child: OutlinedButton.icon(onPressed: () {}, icon: const Icon(Icons.download_outlined), label: Text(l10n.downloadPdf))),
+            ]),
+          ],
+        ),
       ),
     );
   }
@@ -613,7 +1000,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
       _typing = true;
       _controller.clear();
     });
-    await _api.chat(text);
+    await _dummyApi.chat(text);
     if (!mounted) return;
     setState(() {
       _typing = false;
@@ -710,10 +1097,10 @@ class _FutureHealthScreenState extends State<FutureHealthScreen> {
               subtitle: Slider(value: item.value, max: _sliderMax(item.key), onChanged: (value) => setState(() => _setSlider(item.key, value))),
               trailing: Text(item.value.toStringAsFixed(1)),
             ),
-          PrimaryButton(label: l10n.predict, icon: Icons.insights_outlined, onPressed: () => setState(() => prediction = _api.futureHealth())),
+          PrimaryButton(label: l10n.predict, icon: Icons.insights_outlined, onPressed: () => setState(() => prediction = _api.futureHealth(sliders))),
           if (prediction != null) ...[
             const SizedBox(height: 18),
-            AsyncView<Map<String, dynamic>>(load: () => prediction!, builder: (_, data) => _InfoList(title: l10n.prediction, items: _predictionItems(l10n))),
+            AsyncView<Map<String, dynamic>>(load: () => prediction!, builder: (_, data) => _InfoList(title: l10n.prediction, items: _predictionItems(l10n, data))),
             const MiniChart(values: [91, 92, 94, 95, 97]),
           ],
         ],
@@ -725,18 +1112,25 @@ class _FutureHealthScreenState extends State<FutureHealthScreen> {
     switch (key) {
       case 'weight':
         weight = value;
+        break;
       case 'walking':
         walking = value;
+        break;
       case 'sleep':
         sleep = value;
+        break;
       case 'water':
         water = value;
+        break;
       case 'exercise':
         exercise = value;
+        break;
       case 'smoking':
         smoking = value;
+        break;
       case 'alcohol':
         alcohol = value;
+        break;
     }
   }
 }
@@ -753,9 +1147,9 @@ class DietScreen extends StatelessWidget {
         load: _api.diet,
         builder: (_, data) => Column(
           children: [
-            _InfoList(title: l10n.targets, items: _dietTargets(l10n)),
+            _InfoList(title: l10n.targets, items: _dietTargets(l10n, data)),
             const SizedBox(height: 16),
-            _InfoList(title: l10n.dailyPlan, items: _dailyPlan(l10n)),
+            _InfoList(title: l10n.dailyPlan, items: _dailyPlan(l10n, data)),
           ],
         ),
       ),
@@ -763,8 +1157,15 @@ class DietScreen extends StatelessWidget {
   }
 }
 
-class ProgressScreen extends StatelessWidget {
+class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
+
+  @override
+  State<ProgressScreen> createState() => _ProgressScreenState();
+}
+
+class _ProgressScreenState extends State<ProgressScreen> {
+  var _period = 'W';
 
   @override
   Widget build(BuildContext context) {
@@ -777,13 +1178,17 @@ class ProgressScreen extends StatelessWidget {
           children: [
             SegmentedButton<String>(
               segments: [ButtonSegment(value: 'W', label: Text(l10n.weekly)), ButtonSegment(value: 'M', label: Text(l10n.monthly)), ButtonSegment(value: 'Y', label: Text(l10n.yearly))],
-              selected: {'W'},
-              onSelectionChanged: (_) {},
+              selected: {_period},
+              onSelectionChanged: (selection) => setState(() => _period = selection.first),
             ),
             const SizedBox(height: 18),
             const MiniChart(values: [72, 71.8, 71.5, 71.6, 71.2, 70.9, 70.6]),
             const SizedBox(height: 18),
-            _SimpleGrid(items: [l10n.weight, l10n.bmi, l10n.healthScore, l10n.waterIntake, l10n.steps, l10n.sleep, l10n.heartRate, l10n.achievements], icon: Icons.trending_up, onTap: (_) {}),
+            AsyncView<List<Map<String, dynamic>>>(
+              key: ValueKey(_period),
+              load: () => _api.progress(period: _period),
+              builder: (_, entries) => _InfoList(title: l10n.progress, items: _progressItems(l10n, entries)),
+            ),
             const SizedBox(height: 18),
             _InfoList(title: l10n.medicalTimeline, items: _medicalTimeline(l10n)),
           ],
@@ -793,8 +1198,21 @@ class ProgressScreen extends StatelessWidget {
   }
 }
 
-class ReportHistoryScreen extends StatelessWidget {
+class ReportHistoryScreen extends StatefulWidget {
   const ReportHistoryScreen({super.key});
+
+  @override
+  State<ReportHistoryScreen> createState() => _ReportHistoryScreenState();
+}
+
+class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
+  var _query = '';
+  late Future<List<Map<String, dynamic>>> _futureReports = _api.reports();
+
+  Future<void> _deleteReport(int id) async {
+    await _api.deleteReport(id);
+    setState(() => _futureReports = _api.reports());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -803,17 +1221,39 @@ class ReportHistoryScreen extends StatelessWidget {
       title: l10n.reportHistory,
       child: Column(
         children: [
-          AppTextField(label: l10n.searchReports, icon: Icons.search),
+          AppTextField(label: l10n.searchReports, icon: Icons.search, onChanged: (value) => setState(() => _query = value.trim().toLowerCase())),
           const SizedBox(height: 16),
-          for (final report in [l10n.bloodWorkAug, l10n.aiHealthReportShort, l10n.lipidProfile, l10n.sleepSummary])
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: Text(report),
-                subtitle: Text(l10n.previousReport),
-                trailing: Wrap(spacing: 4, children: const [Icon(Icons.visibility_outlined), Icon(Icons.download_outlined), Icon(Icons.delete_outline)]),
-              ),
-            ),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _futureReports,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) return const LoadingSkeleton();
+              if (snapshot.hasError) return ErrorState(onRetry: () => setState(() => _futureReports = _api.reports()));
+              final reports = (snapshot.data ?? const <Map<String, dynamic>>[])
+                  .where((report) => _query.isEmpty || '${report['title'] ?? ''}'.toLowerCase().contains(_query))
+                  .toList();
+              if (reports.isEmpty) return EmptyState();
+              return Column(
+                children: [
+                  for (final report in reports)
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.description_outlined),
+                        title: Text('${report['title'] ?? l10n.previousReport}'),
+                        subtitle: Text(l10n.previousReport),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: [
+                            IconButton(onPressed: () {}, icon: const Icon(Icons.visibility_outlined)),
+                            IconButton(onPressed: () {}, icon: const Icon(Icons.download_outlined)),
+                            IconButton(onPressed: () => _deleteReport(report['id'] as int), icon: const Icon(Icons.delete_outline)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -823,6 +1263,11 @@ class ReportHistoryScreen extends StatelessWidget {
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  Future<void> _logout(BuildContext context) async {
+    await _api.logout();
+    if (context.mounted) context.go('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -830,16 +1275,19 @@ class ProfileScreen extends StatelessWidget {
       bottomNavigationBar: _BottomNav(current: '/profile'),
       body: AppScaffold(
         title: l10n.profile,
-        child: Column(
-          children: [
-            const CircleAvatar(radius: 48, child: Icon(Icons.person, size: 50)),
-            const SizedBox(height: 10),
-            Text(l10n.profileName, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 18),
-            for (final item in [l10n.edit, l10n.medicalDetails, l10n.emergencyContact, l10n.notifications, l10n.privacy, l10n.language, l10n.about])
-              Card(child: ListTile(title: Text(item), trailing: const Icon(Icons.chevron_right))),
-            PrimaryButton(label: l10n.logout, icon: Icons.logout, onPressed: () => context.go('/login')),
-          ],
+        child: AsyncView<Map<String, dynamic>>(
+          load: _api.profile,
+          builder: (_, profile) => Column(
+            children: [
+              const CircleAvatar(radius: 48, child: Icon(Icons.person, size: 50)),
+              const SizedBox(height: 10),
+              Text('${profile['name'] ?? l10n.profileName}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 18),
+              for (final item in [l10n.edit, l10n.medicalDetails, l10n.emergencyContact, l10n.notifications, l10n.privacy, l10n.language, l10n.about])
+                Card(child: ListTile(title: Text(item), trailing: const Icon(Icons.chevron_right))),
+              PrimaryButton(label: l10n.logout, icon: Icons.logout, onPressed: () => _logout(context)),
+            ],
+          ),
         ),
       ),
     );
@@ -966,17 +1414,21 @@ class _SimpleGrid extends StatelessWidget {
 }
 
 class _UploadBox extends StatelessWidget {
-  const _UploadBox({required this.label, required this.icon});
+  const _UploadBox({required this.label, required this.icon, required this.onTap});
   final String label;
   final IconData icon;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        child: Column(children: [Icon(icon, size: 42), const SizedBox(height: 10), Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), Text(context.l10n.previewReady)]),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          child: Column(children: [Icon(icon, size: 42), const SizedBox(height: 10), Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), Text(context.l10n.previewReady)]),
+        ),
       ),
     );
   }
